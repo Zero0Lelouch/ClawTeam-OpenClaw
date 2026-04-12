@@ -377,7 +377,7 @@ clawteam launch hedge-fund --team fund1 --goal "Analyze AAPL, MSFT, NVDA for Q2 
 clawteam launch hedge-fund-hermes --team-name fund1 --goal "Analyze AAPL" --force
 ```
 
-5 analyst agents (value, growth, technical, fundamentals, sentiment) work in parallel. Risk manager synthesizes all signals. Portfolio manager makes final decisions.
+Seven agents total: 5 analysts (value, growth, technical, fundamentals, sentiment) work in parallel, a risk manager synthesizes all signals, and a portfolio manager makes the final decision.
 
 Hermes users: the `hedge-fund-hermes` variant rewrites each analyst's task to use `mcp_gbrain_put_page` for output persistence instead of `clawteam inbox send`. Findings land in gbrain pages with predictable slugs (`<team-name>-buffett`, `<team-name>-growth`, etc.), persist across sessions, and can be queried later.
 
@@ -432,6 +432,7 @@ Templates are TOML files — **create your own** for any domain.
 </table>
 
 ### v0.3.0 — Production Intelligence *(New)*
+- **Hermes Agent Support** — native spawn target across NativeCliAdapter, tmux, and subprocess backends. Auto-inserts `chat` subcommand, tags with `--source tool`. Ships with `hedge-fund-hermes` template that uses gbrain for output persistence.
 - **Cost Dashboard** — real-time token/cost by agent, model, and task (`clawteam board cost`). No competitor has this.
 - **Circuit Breaker** — healthy → degraded → open tri-state with half-open probing
 - **Retry with Backoff** — `spawn_with_retry()` for resilient agent spawning
@@ -490,6 +491,59 @@ Once the skill is installed, talk to your OpenClaw bot in any channel:
 
 ---
 
+## Hermes Agent Integration
+
+ClawTeam ships first-class support for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — Nous Research's self-improving CLI agent. Hermes workers spawn via the same adapter path as OpenClaw (tmux or subprocess), but use Hermes-native command flags (`hermes chat --yolo --source tool -q "<task>"`).
+
+Hermes workers automatically inherit MCP servers configured in `~/.hermes/config.yaml`. If you have [gbrain](https://github.com/garrytan/gbrain) or any other MCP server set up, every spawned worker gets that capability for free.
+
+| Capability | Hermes Alone | Hermes + ClawTeam |
+|-----------|--------------|-------------------|
+| **Parallelism** | Single session | Spawn N workers in tmux windows |
+| **Coordination** | Manual | Kanban + inboxes + task dependencies |
+| **Isolation** | Shared working dir | Git worktrees per agent |
+| **Persistence** | In-session only | gbrain pages via `hedge-fund-hermes` template |
+| **Session hygiene** | Mixes with user sessions | `--source tool` tag keeps them separate |
+
+**Two ways to use Hermes with ClawTeam:**
+
+**1. Hermes-native template (recommended):** `clawteam launch hedge-fund-hermes --team-name <name> --goal "..." --force`
+
+The `hedge-fund-hermes` template sets `command = ["hermes"]` by default. Each analyst stores findings in gbrain via `mcp_gbrain_put_page`. No `--command hermes` flag needed. Findings persist across sessions and are queryable later.
+
+**2. OpenClaw-style template with Hermes workers:** `clawteam launch hedge-fund --team-name <name> --goal "..." --command hermes --force`
+
+Works but requires `--command hermes` to override the template default. Hermes workers don't always execute the `clawteam inbox send` commands that OpenClaw workers use, so you'll likely need to capture tmux scrollback to read reports. The Hermes-native template is cleaner.
+
+**Installation:** see Step 5b in the Install section.
+
+```
+  You ────► Hermes chat ────► clawteam launch hedge-fund-hermes
+                                         │
+                                         ▼
+                             ┌─────────────────────────┐
+                             │  hermes chat (worker 1) │
+                             │  hermes chat (worker 2) │
+                             │  ...                     │
+                             │  hermes chat (worker 7) │
+                             └──────────┬──────────────┘
+                                        │
+                                        ▼
+                             ┌─────────────────────────┐
+                             │  mcp_gbrain_put_page    │
+                             │  (per-analyst findings) │
+                             └──────────┬──────────────┘
+                                        │
+                                        ▼
+                             ┌─────────────────────────┐
+                             │  portfolio-manager      │
+                             │  mcp_gbrain_query       │
+                             │  → consolidated report  │
+                             └─────────────────────────┘
+```
+
+---
+
 ## Architecture
 
 ```
@@ -539,9 +593,11 @@ clawteam team discover                    # List all teams
 clawteam team status <team>               # Show members
 clawteam team cleanup <team> --force      # Delete team
 
-# Spawn agents
+# Spawn agents (note: `spawn` uses --team; `launch` uses --team-name)
 clawteam spawn --team <team> --agent-name <name> --task "do this"
 clawteam spawn codex --team <team> --agent-name <name> --task "do this"
+clawteam spawn --team <team> --agent-name <name> --task "do this" hermes
+clawteam spawn subprocess hermes --team <team> --agent-name <name> --task "do this"
 
 # Task management
 clawteam task create <team> "subject" -o <owner> --blocked-by <id1>,<id2>
@@ -660,7 +716,9 @@ Areas we'd love help with:
 
 - [@karpathy/autoresearch](https://github.com/karpathy/autoresearch) — autonomous ML research framework
 - [OpenClaw](https://openclaw.ai) — default agent backend
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — Nous Research's self-improving CLI agent
 - [Claude Code](https://claude.ai/claude-code) and [Codex](https://openai.com/codex) — supported AI coding agents
+- [gbrain](https://github.com/garrytan/gbrain) — knowledge brain used by the `hedge-fund-hermes` template
 - [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) — hedge fund template inspiration
 - [CLI-Anything](https://github.com/HKUDS/CLI-Anything) — sister project
 
