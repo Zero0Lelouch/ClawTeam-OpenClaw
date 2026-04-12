@@ -273,53 +273,24 @@ openclaw approvals allowlist add --agent "*" "$(which clawteam)"
 
 ### Step 5b: Install the Hermes skill (Hermes Agent users only)
 
-The skill file teaches Hermes Agent how to use ClawTeam through natural language. Skip this step if you're not using Hermes.
+The skill file teaches Hermes Agent how to use ClawTeam through natural language -- including when to route to clawteam (vs `delegate_task`), correct spawn flags, and timing expectations. Skip this step if you're not using Hermes.
 
 ```bash
-mkdir -p ~/.hermes/skills/autonomous-ai-agents/clawteam
-cat > ~/.hermes/skills/autonomous-ai-agents/clawteam/SKILL.md <<'SKILL_EOF'
----
-name: clawteam
-description: "Multi-agent swarm coordination via the ClawTeam CLI. Spawn Hermes agents as workers in tmux windows with git worktree isolation. Trigger phrases: team, swarm, multi-agent, clawteam, spawn agents, parallel agents."
-version: 0.3.0
-metadata:
-  hermes:
-    tags: [Multi-Agent, Swarm, Coordination, Teams]
----
-
-# ClawTeam - Multi-Agent Swarm Coordination
-
-## Spawn Hermes workers
-
-Each worker runs in its own tmux window with git worktree isolation.
-
-```bash
-# Manual: create team + spawn workers one-by-one
-clawteam team spawn-team my-team -d "Goal description" -n leader
-clawteam spawn -t my-team -n researcher --task "Research X" --no-workspace hermes
-clawteam spawn -t my-team -n writer --task "Write report" --no-workspace hermes
-
-# Or: use a built-in template, override command to hermes
-clawteam launch hedge-fund --team-name tesla --goal "Analyze TSLA" --command hermes --force
-clawteam launch research-paper --team-name papers --goal "Review arxiv 2024.X" --command hermes --force
-clawteam launch code-review --team-name review --goal "Review this PR" --command hermes --force
-clawteam launch strategy-room --team-name strat --goal "Business strategy" --command hermes --force
-
-# Monitor
-clawteam board show my-team        # Kanban view
-clawteam board attach my-team      # Tmux tiled view
+mkdir -p ~/.hermes/skills/openclaw-imports/clawteam
+cp skills/hermes/SKILL.md ~/.hermes/skills/openclaw-imports/clawteam/SKILL.md
 ```
 
-**Important:** All 4 built-in templates (`hedge-fund`, `research-paper`, `code-review`, `strategy-room`) default to `command = ["openclaw"]`. Hermes users must pass `--command hermes` to `clawteam launch` or those templates will try to spawn OpenClaw workers and fail with gateway token errors.
+> Verify with `hermes skills list | grep clawteam`. The skill should show up under `openclaw-imports` (Hermes auto-routes skills from that directory).
 
-## Spawn flags
+**Key things the skill teaches Hermes:**
 
-- `--yolo` is inherited from `--skip-permissions`
-- `-m MODEL` forwards the model (tmux + subprocess backends)
-- Each spawn gets `--source tool` automatically (keeps clawteam spawns out of your user session list)
-- Hermes session ID is auto-generated; resume later via `hermes --resume <id>`
-SKILL_EOF
-```
+- Route multi-agent/swarm/team queries to clawteam (not `delegate_task`)
+- Use `--team-name` (not `--team`), `-g`/`--goal`, `--force` on `launch`
+- Always pass `--command hermes` on `launch` -- templates default to `openclaw`
+- On `spawn`, pass `hermes` as a trailing positional arg (not `--command hermes`)
+- Wait `sleep 60` after launch for worker boot, then poll the board every 30s
+- Never peek inboxes within the first 60s (they'll be empty)
+- Read inboxes and produce a consolidated report before `clawteam team cleanup`
 
 Spawned Hermes workers automatically inherit MCP servers configured in `~/.hermes/config.yaml`, so any knowledge brain or tool setup is available to every worker.
 
